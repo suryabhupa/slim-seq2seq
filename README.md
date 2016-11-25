@@ -12,5 +12,3 @@ A distillation of the official Tensorflow seq2seq model and tutorial.
 `data_utils.py`: Utility methods for loading, tokenizing, and preprocessing English-to-French corpus.
 
 ## Tutorial
-
-
