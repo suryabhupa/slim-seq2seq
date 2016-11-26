@@ -31,9 +31,6 @@ one of them, others should be easy to substitute.
 
 * Full sequence-to-sequence models.
   - basic_rnn_seq2seq: The most basic RNN-RNN model.
-  - tied_rnn_seq2seq: The basic model with tied encoder and decoder weights.
-  - embedding_rnn_seq2seq: The basic model with input embedding.
-  - embedding_tied_rnn_seq2seq: The tied model with input embedding.
   - embedding_attention_seq2seq: Advanced model with input embedding and
       the neural attention mechanism; recommended for complex tasks.
 
