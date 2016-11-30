@@ -73,6 +73,14 @@ Decode follows the exact same flow as `train()` does. The session is instantiate
 
 ##### `seq2seq_model.py`
 
+This file the main seq2seq model itself; this implementation uses attention. The class Seq2SeqModel is defined, each it has three main functions: `__init__`, `step()`, and `get_batch()`, which we discuss in more detail below. Note that while the model presented is of a certain form, it is easily amenable to using different RNN schemes.
+
+###### `__init__()`
+This method defines the model and consumes all input parameters.Most are self explanatory, but some of particular note are `max_gradient_norm`, which is a hyperparameter denoting at what point we clip gradients, the `use_lstm` flag, which will let us pick between using LSTM cells or GRU cells (default), and `forward_only` flag, which will avoid constructing the backward pass part of the model (useful for pure decoding).
+
+####### `sampled_loss()`
+This is an important feature of the model. The sampled softmax is a special type of softmax that was specifically designed for NMT models to try to handle a large target vocabulary.
+
 ##### `seq2seq.py`
 
 ##### `data_utils.py`
