@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+import seq2seq
 
 from tensorflow.models.rnn.translate import data_utils
 
@@ -43,10 +44,20 @@ class Seq2SeqModel(object):
     http://arxiv.org/abs/1412.2007
   """
 
-  def __init__(self, source_vocab_size, target_vocab_size, buckets, size,
-               num_layers, max_gradient_norm, batch_size, learning_rate,
-               learning_rate_decay_factor, use_lstm=False,
-               num_samples=512, forward_only=False):
+  def __init__(self,
+               source_vocab_size,
+               target_vocab_size,
+               buckets,
+               size,
+               num_layers,
+               max_gradient_norm,
+               batch_size,
+               learning_rate,
+               learning_rate_decay_factor,
+               use_lstm=False,
+               num_samples=512,
+               forward_only=False,
+               dtype=tf.float32):
     """Create the model.
 
     Args:
@@ -68,12 +79,14 @@ class Seq2SeqModel(object):
       use_lstm: if true, we use LSTM cells instead of GRU cells.
       num_samples: number of samples for sampled softmax.
       forward_only: if set, we do not construct the backward pass in the model.
+      dtype: the data type to use to store internal variables.
     """
     self.source_vocab_size = source_vocab_size
     self.target_vocab_size = target_vocab_size
     self.buckets = buckets
     self.batch_size = batch_size
-    self.learning_rate = tf.Variable(float(learning_rate), trainable=False)
+    self.learning_rate = tf.Variable(
+        float(learning_rate), trainable=False, dtype=dtype)
     self.learning_rate_decay_op = self.learning_rate.assign(
         self.learning_rate * learning_rate_decay_factor)
     self.global_step = tf.Variable(0, trainable=False)
@@ -83,17 +96,22 @@ class Seq2SeqModel(object):
     softmax_loss_function = None
     # Sampled softmax only makes sense if we sample less than vocabulary size.
     if num_samples > 0 and num_samples < self.target_vocab_size:
-      with tf.device("/cpu:0"):
-        w = tf.get_variable("proj_w", [size, self.target_vocab_size])
-        w_t = tf.transpose(w)
-        b = tf.get_variable("proj_b", [self.target_vocab_size])
+      w_t = tf.get_variable("proj_w", [self.target_vocab_size, size], dtype=dtype)
+      w = tf.transpose(w_t)
+      b = tf.get_variable("proj_b", [self.target_vocab_size], dtype=dtype)
       output_projection = (w, b)
 
       def sampled_loss(inputs, labels):
-        with tf.device("/cpu:0"):
-          labels = tf.reshape(labels, [-1, 1])
-          return tf.nn.sampled_softmax_loss(w_t, b, inputs, labels, num_samples,
-                                            self.target_vocab_size)
+        labels = tf.reshape(labels, [-1, 1])
+        # We need to compute the sampled_softmax_loss using 32bit floats to
+        # avoid numerical instabilities.
+        local_w_t = tf.cast(w_t, tf.float32)
+        local_b = tf.cast(b, tf.float32)
+        local_inputs = tf.cast(inputs, tf.float32)
+        return tf.cast(
+            tf.nn.sampled_softmax_loss(local_w_t, local_b, local_inputs, labels,
+                                       num_samples, self.target_vocab_size),
+            dtype)
       softmax_loss_function = sampled_loss
 
     # Create the internal multi-layer cell for our RNN.
@@ -106,13 +124,16 @@ class Seq2SeqModel(object):
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
-      return tf.nn.seq2seq.embedding_attention_seq2seq(
-          encoder_inputs, decoder_inputs, cell,
+      return seq2seq.embedding_attention_seq2seq(
+          encoder_inputs,
+          decoder_inputs,
+          cell,
           num_encoder_symbols=source_vocab_size,
           num_decoder_symbols=target_vocab_size,
           embedding_size=size,
           output_projection=output_projection,
-          feed_previous=do_decode)
+          feed_previous=do_decode,
+          dtype=dtype)
 
     # Feeds for inputs.
     self.encoder_inputs = []
@@ -124,7 +145,7 @@ class Seq2SeqModel(object):
     for i in xrange(buckets[-1][1] + 1):
       self.decoder_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                 name="decoder{0}".format(i)))
-      self.target_weights.append(tf.placeholder(tf.float32, shape=[None],
+      self.target_weights.append(tf.placeholder(dtype, shape=[None],
                                                 name="weight{0}".format(i)))
 
     # Our targets are decoder inputs shifted by one.
@@ -133,7 +154,8 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      print('do i ever get to this forward_only part')
+      self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
           softmax_loss_function=softmax_loss_function)
@@ -145,7 +167,8 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      print('do i ever get to this other IMPORTANT part')
+      self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: seq2seq_f(x, y, False),
@@ -221,11 +244,21 @@ class Seq2SeqModel(object):
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
+    # session.run(output_feed)
+    # session.run(input_feed)
+
+    # tf.Print(output_feed, [output_feed], message='OUTPUT FEED:')
+    # tf.Print(input_feed, [input_feed], message='INPUT FEED:')
+    # print('OUTPUT FEED:', output_feed, '\n')
+    # print('INPUT FEED:', input_feed, '\n')
+    # attns, outputs, states = session.run(output_feed, input_feed)
     outputs = session.run(output_feed, input_feed)
+    # print('OUTPUTS', outputs, '\n')
+    # print('ATTNS', attns, '\n')
     if not forward_only:
-      return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
+      return outputs[1], outputs[2], None #, attns # Gradient norm, loss, no outputs.
     else:
-      return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
+      return None, outputs[0], outputs[1:] #, attns  # No gradient norm, loss, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.
