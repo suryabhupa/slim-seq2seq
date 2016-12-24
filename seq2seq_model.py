@@ -24,6 +24,7 @@ import random
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+import seq2seq
 
 from tensorflow.models.rnn.translate import data_utils
 
@@ -127,7 +128,7 @@ class Seq2SeqModel(object):
 
     # The seq2seq function: we use embedding for the input and attention.
     def seq2seq_f(encoder_inputs, decoder_inputs, do_decode):
-      return tf.nn.seq2seq.embedding_attention_seq2seq(
+      return seq2seq.embedding_attention_seq2seq(
           encoder_inputs,
           decoder_inputs,
           cell,
@@ -160,7 +161,7 @@ class Seq2SeqModel(object):
     # Training outputs and losses.
     if forward_only:
       print('do i ever get to this forward_only part')
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
           softmax_loss_function=softmax_loss_function)
@@ -173,7 +174,7 @@ class Seq2SeqModel(object):
           ]
     else:
       print('do i ever get to this other IMPORTANT part')
-      self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
+      self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
           lambda x, y: seq2seq_f(x, y, False),
@@ -258,13 +259,14 @@ class Seq2SeqModel(object):
     # tf.Print(input_feed, [input_feed], message='INPUT FEED:')
     # print('OUTPUT FEED:', output_feed, '\n')
     # print('INPUT FEED:', input_feed, '\n')
-    attns, outputs, states = session.run(output_feed, input_feed)
+    # attns, outputs, states = session.run(output_feed, input_feed)
+    outputs, states = session.run(output_feed, input_feed)
     print('OUTPUTS', outputs, '\n')
-    print('ATTNS', attns, '\n')
+    # print('ATTNS', attns, '\n')
     if not forward_only:
-      return outputs[1], outputs[2], None, attns # Gradient norm, loss, no outputs.
+      return outputs[1], outputs[2], None #, attns # Gradient norm, loss, no outputs.
     else:
-      return attns, None, outputs[0], outputs[1:], attns  # No gradient norm, loss, outputs.
+      return None, outputs[0], outputs[1:] #, attns  # No gradient norm, loss, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.
