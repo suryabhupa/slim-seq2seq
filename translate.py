@@ -99,8 +99,8 @@ def read_data(source_path, target_path, max_size=None):
     with tf.gfile.GFile(target_path, mode="r") as target_file:
       source, target = source_file.readline(), target_file.readline()
       counter = 0
-      while source and target and (not max_size or counter < max_size):
-      # while source and target and (counter < 500000):
+      # while source and target and (not max_size or counter < max_size):
+      while source and target and (counter < 500000):
         counter += 1
         if counter % 100000 == 0:
           print("  reading data line %d" % counter)
