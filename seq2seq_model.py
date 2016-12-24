@@ -90,6 +90,8 @@ class Seq2SeqModel(object):
         self.learning_rate * learning_rate_decay_factor)
     self.global_step = tf.Variable(0, trainable=False)
 
+    print('yyy!')
+
     # If we use sampled softmax, we need an output projection.
     output_projection = None
     softmax_loss_function = None
@@ -113,6 +115,8 @@ class Seq2SeqModel(object):
             dtype)
       softmax_loss_function = sampled_loss
 
+    print('zzz!')
+
     # Create the internal multi-layer cell for our RNN.
     single_cell = tf.nn.rnn_cell.GRUCell(size)
     if use_lstm:
@@ -134,6 +138,8 @@ class Seq2SeqModel(object):
           feed_previous=do_decode,
           dtype=dtype)
 
+    print('xxx!')
+
     # Feeds for inputs.
     self.encoder_inputs = []
     self.decoder_inputs = []
@@ -153,6 +159,7 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
+      print('do i ever get to this forward_only part')
       self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
@@ -165,6 +172,7 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
+      print('do i ever get to this other IMPORTANT part')
       self.outputs, self.losses = tf.nn.seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
@@ -241,11 +249,22 @@ class Seq2SeqModel(object):
       for l in xrange(decoder_size):  # Output logits.
         output_feed.append(self.outputs[bucket_id][l])
 
-    outputs = session.run(output_feed, input_feed)
+    # print(tf.get_collection(tf.GraphKeys.VARIABLES))
+
+    # session.run(output_feed)
+    # session.run(input_feed)
+
+    # tf.Print(output_feed, [output_feed], message='OUTPUT FEED:')
+    # tf.Print(input_feed, [input_feed], message='INPUT FEED:')
+    # print('OUTPUT FEED:', output_feed, '\n')
+    # print('INPUT FEED:', input_feed, '\n')
+    attns, outputs, states = session.run(output_feed, input_feed)
+    print('OUTPUTS', outputs, '\n')
+    print('ATTNS', attns, '\n')
     if not forward_only:
-      return outputs[1], outputs[2], None  # Gradient norm, loss, no outputs.
+      return outputs[1], outputs[2], None, attns # Gradient norm, loss, no outputs.
     else:
-      return None, outputs[0], outputs[1:]  # No gradient norm, loss, outputs.
+      return attns, None, outputs[0], outputs[1:], attns  # No gradient norm, loss, outputs.
 
   def get_batch(self, data, bucket_id):
     """Get a random batch of data from the specified bucket, prepare for step.

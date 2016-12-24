@@ -178,7 +178,6 @@ def attention_decoder(decoder_inputs,
                       attention_states,
                       cell,
                       output_size=None,
-                      num_heads=1,
                       loop_function=None,
                       dtype=None,
                       scope=None,
@@ -198,7 +197,6 @@ def attention_decoder(decoder_inputs,
     attention_states: 3D Tensor [batch_size x attn_length x attn_size].
     cell: rnn_cell.RNNCell defining the cell function and size.
     output_size: Size of the output vectors; if None, we use cell.output_size.
-    num_heads: Number of attention heads that read from attention_states.
     loop_function: If not None, this function will be applied to i-th output
       in order to generate i+1-th input, and decoder_inputs will be ignored,
       except for the first element ("GO" symbol). This can be used for decoding,
@@ -229,16 +227,9 @@ def attention_decoder(decoder_inputs,
           output = linear(cell_output, new_attn).
       state: The state of each decoder cell the final time-step.
         It is a 2D Tensor of shape [batch_size x cell.state_size].
-
-  Raises:
-    ValueError: when num_heads is not positive, there are no inputs, shapes
-      of attention_states are not set, or input size cannot be inferred
-      from the input.
   """
   if not decoder_inputs:
     raise ValueError("Must provide at least 1 input to attention decoder.")
-  if num_heads < 1:
-    raise ValueError("With less than 1 heads, use a non-attention decoder.")
   if attention_states.get_shape()[2].value is None:
     raise ValueError("Shape[2] of attention_states must be known: %s"
                      % attention_states.get_shape())
@@ -261,12 +252,11 @@ def attention_decoder(decoder_inputs,
     hidden_features = []
     v = []
     attention_vec_size = attn_size  # Size of query vectors for attention.
-    for a in xrange(num_heads):
-      k = variable_scope.get_variable("AttnW_%d" % a,
-                                      [1, 1, attn_size, attention_vec_size])
-      hidden_features.append(nn_ops.conv2d(hidden, k, [1, 1, 1, 1], "SAME"))
-      v.append(
-          variable_scope.get_variable("AttnV_%d" % a, [attention_vec_size]))
+    k = variable_scope.get_variable("AttnW_%d" % a,
+                                    [1, 1, attn_size, attention_vec_size])
+    hidden_features.append(nn_ops.conv2d(hidden, k, [1, 1, 1, 1], "SAME"))
+    v.append(
+        variable_scope.get_variable("AttnV_%d" % a, [attention_vec_size]))
 
     state = initial_state
 
@@ -280,30 +270,36 @@ def attention_decoder(decoder_inputs,
           if ndims:
             assert ndims == 2
         query = array_ops.concat(1, query_list)
-      for a in xrange(num_heads):
-        with variable_scope.variable_scope("Attention_%d" % a):
-          y = linear(query, attention_vec_size, True)
-          y = array_ops.reshape(y, [-1, 1, 1, attention_vec_size])
-          # Attention mask is a softmax of v^T * tanh(...).
-          s = math_ops.reduce_sum(
-              v[a] * math_ops.tanh(hidden_features[a] + y), [2, 3])
-          a = nn_ops.softmax(s)
-          # Now calculate the attention-weighted vector d.
-          d = math_ops.reduce_sum(
-              array_ops.reshape(a, [-1, attn_length, 1, 1]) * hidden,
-              [1, 2])
-          ds.append(array_ops.reshape(d, [-1, attn_size]))
+      with variable_scope.variable_scope("Attention_%d" % a):
+        y = linear(query, attention_vec_size, True)
+        y = array_ops.reshape(y, [-1, 1, 1, attention_vec_size])
+        # Attention mask is a softmax of v^T * tanh(...).
+        s = math_ops.reduce_sum(
+            v[a] * math_ops.tanh(hidden_features[a] + y), [2, 3])
+        tf.Print(s, [s], message='This is s: ')
+        print('S', s)
+        a = nn_ops.softmax(s)
+        tf.Print(a, [a], message='This is a: ')
+        print('A', a)
+        # Now calculate the attention-weighted vector d.
+        d = math_ops.reduce_sum(
+            array_ops.reshape(a, [-1, attn_length, 1, 1]) * hidden,
+            [1, 2])
+        tf.Print(d, [d], message='This is d: ')
+        print('D', d)
+        ds.append(array_ops.reshape(d, [-1, attn_size]))
       return ds
 
     outputs = []
     prev = None
     batch_attn_size = array_ops.pack([batch_size, attn_size])
-    attns = [array_ops.zeros(batch_attn_size, dtype=dtype)
-             for _ in xrange(num_heads)]
+    attns = [array_ops.zeros(batch_attn_size, dtype=dtype)]
     for a in attns:  # Ensure the second shape of attention vectors is set.
       a.set_shape([None, attn_size])
     if initial_state_attention:
       attns = attention(initial_state)
+      print(tf.get_collection(tf.GraphKeys.VARIABLES))
+      print('attns1', attns)
     for i, inp in enumerate(decoder_inputs):
       if i > 0:
         variable_scope.get_variable_scope().reuse_variables()
@@ -323,8 +319,12 @@ def attention_decoder(decoder_inputs,
         with variable_scope.variable_scope(variable_scope.get_variable_scope(),
                                            reuse=True):
           attns = attention(state)
+          print(tf.get_collection(tf.GraphKeys.VARIABLES))
+          print('attns2', attns)
       else:
         attns = attention(state)
+        print(tf.get_collection(tf.GraphKeys.VARIABLES))
+        print('attns3', attns)
 
       with variable_scope.variable_scope("AttnOutputProjection"):
         output = linear([cell_output] + attns, output_size, True)
@@ -332,7 +332,8 @@ def attention_decoder(decoder_inputs,
         prev = output
       outputs.append(output)
 
-  return outputs, state
+  print('do i get here')
+  return outputs, state, attns
 
 
 def embedding_attention_decoder(decoder_inputs,
@@ -341,7 +342,6 @@ def embedding_attention_decoder(decoder_inputs,
                                 cell,
                                 num_symbols,
                                 embedding_size,
-                                num_heads=1,
                                 output_size=None,
                                 output_projection=None,
                                 feed_previous=False,
@@ -358,7 +358,6 @@ def embedding_attention_decoder(decoder_inputs,
     cell: rnn_cell.RNNCell defining the cell function.
     num_symbols: Integer, how many symbols come into the embedding.
     embedding_size: Integer, the length of the embedding vector for each symbol.
-    num_heads: Number of attention heads that read from attention_states.
     output_size: Size of the output vectors; if None, use output_size.
     output_projection: None or a pair (W, B) of output projection weights and
       biases; W has shape [output_size x num_symbols] and B has shape
@@ -409,13 +408,13 @@ def embedding_attention_decoder(decoder_inputs,
         update_embedding_for_previous) if feed_previous else None
     emb_inp = [
         embedding_ops.embedding_lookup(embedding, i) for i in decoder_inputs]
+    print('the embedding attention decoder is here!')
     return attention_decoder(
         emb_inp,
         initial_state,
         attention_states,
         cell,
         output_size=output_size,
-        num_heads=num_heads,
         loop_function=loop_function,
         initial_state_attention=initial_state_attention)
 
@@ -426,7 +425,6 @@ def embedding_attention_seq2seq(encoder_inputs,
                                 num_encoder_symbols,
                                 num_decoder_symbols,
                                 embedding_size,
-                                num_heads=1,
                                 output_projection=None,
                                 feed_previous=False,
                                 dtype=None,
@@ -452,7 +450,6 @@ def embedding_attention_seq2seq(encoder_inputs,
     num_encoder_symbols: Integer; number of symbols on the encoder side.
     num_decoder_symbols: Integer; number of symbols on the decoder side.
     embedding_size: Integer, the length of the embedding vector for each symbol.
-    num_heads: Number of attention heads that read from attention_states.
     output_projection: None or a pair (W, B) of output projection weights and
       biases; W has shape [output_size x num_decoder_symbols] and B has
       shape [num_decoder_symbols]; if provided and feed_previous=True, each
@@ -491,6 +488,8 @@ def embedding_attention_seq2seq(encoder_inputs,
                   for e in encoder_outputs]
     attention_states = array_ops.concat(1, top_states)
 
+    print("HELLOOOO")
+
     # Decoder.
     output_size = None
     if output_projection is None:
@@ -505,7 +504,6 @@ def embedding_attention_seq2seq(encoder_inputs,
           cell,
           num_decoder_symbols,
           embedding_size,
-          num_heads=num_heads,
           output_size=output_size,
           output_projection=output_projection,
           feed_previous=feed_previous,
@@ -516,14 +514,14 @@ def embedding_attention_seq2seq(encoder_inputs,
       reuse = None if feed_previous_bool else True
       with variable_scope.variable_scope(
           variable_scope.get_variable_scope(), reuse=reuse) as scope:
-        outputs, state = embedding_attention_decoder(
+        print("SCOOOPE:", scope)
+        outputs, state, attns = embedding_attention_decoder(
             decoder_inputs,
             encoder_state,
             attention_states,
             cell,
             num_decoder_symbols,
             embedding_size,
-            num_heads=num_heads,
             output_size=output_size,
             output_projection=output_projection,
             feed_previous=feed_previous_bool,
@@ -532,21 +530,23 @@ def embedding_attention_seq2seq(encoder_inputs,
         state_list = [state]
         if nest.is_sequence(state):
           state_list = nest.flatten(state)
-        return outputs + state_list
+        return outputs + state_list, attns
 
-    outputs_and_state = control_flow_ops.cond(feed_previous,
+    outputs_and_state, attns = control_flow_ops.cond(feed_previous,
                                               lambda: decoder(True),
                                               lambda: decoder(False))
+    print('outputs_and_state yo', outputs_and_state)
+    print('attns', attns)
     outputs_len = len(decoder_inputs)  # Outputs length same as decoder inputs.
     state_list = outputs_and_state[outputs_len:]
     state = state_list[0]
     if nest.is_sequence(encoder_state):
       state = nest.pack_sequence_as(structure=encoder_state,
                                     flat_sequence=state_list)
-    return outputs_and_state[:outputs_len], state
+    return outputs_and_state[:outputs_len], state, attns
 
 
-def one2many_rnn_seq2seq(encoder_inputs,
+def one2many_rnn_seqs2seq(encoder_inputs,
                          decoder_inputs_dict,
                          cell,
                          num_encoder_symbols,
