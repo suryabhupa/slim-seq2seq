@@ -565,8 +565,7 @@ def one2many_rnn_seqs2seq(encoder_inputs,
             return outputs + state_list
 
           outputs_and_state = control_flow_ops.cond(
-              feed_previous,
-              lambda: filled_embedding_rnn_decoder(True),
+              feed_previous, lambda: filled_embedding_rnn_decoder(True),
               lambda: filled_embedding_rnn_decoder(False))
           # Outputs length is the same as for decoder inputs.
           outputs_len = len(decoder_inputs)
@@ -574,8 +573,7 @@ def one2many_rnn_seqs2seq(encoder_inputs,
           state_list = outputs_and_state[outputs_len:]
           state = state_list[0]
           if nest.is_sequence(encoder_state):
-            state = nest.pack_sequence_as(structure=encoder_state,
-                                          flat_sequence=state_list)
+            state = nest.pack_sequence_as(structure=encoder_state, flat_sequence=state_list)
       outputs_dict[name] = outputs
       state_dict[name] = state
 
@@ -714,8 +712,7 @@ def model_with_buckets(encoder_inputs, decoder_inputs, targets, weights,
   outputs = []
   with ops.name_scope(name, "model_with_buckets", all_inputs):
     for j, bucket in enumerate(buckets):
-      with variable_scope.variable_scope(variable_scope.get_variable_scope(),
-                                         reuse=True if j > 0 else None):
+      with variable_scope.variable_scope(variable_scope.get_variable_scope(), reuse=True if j > 0 else None):
         bucket_outputs, _ = seq2seq(encoder_inputs[:bucket[0]],
                                     decoder_inputs[:bucket[1]])
         outputs.append(bucket_outputs)
