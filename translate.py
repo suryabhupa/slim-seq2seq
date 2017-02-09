@@ -76,7 +76,6 @@ FLAGS = tf.app.flags.FLAGS
 # See seq2seq_model.Seq2SeqModel for details of how they work.
 _buckets = [(5, 10), (10, 15), (20, 25), (40, 50)]
 
-
 def read_data(source_path, target_path, max_size=None):
   """Read data from source and target files and put into buckets.
 

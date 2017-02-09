@@ -154,7 +154,6 @@ class Seq2SeqModel(object):
 
     # Training outputs and losses.
     if forward_only:
-      print('do i ever get to this forward_only part')
       self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets, lambda x, y: seq2seq_f(x, y, True),
@@ -167,7 +166,6 @@ class Seq2SeqModel(object):
               for output in self.outputs[b]
           ]
     else:
-      print('do i ever get to this other IMPORTANT part')
       self.outputs, self.losses = seq2seq.model_with_buckets(
           self.encoder_inputs, self.decoder_inputs, targets,
           self.target_weights, buckets,
